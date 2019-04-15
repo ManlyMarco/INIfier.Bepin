@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
+using System.ComponentModel;
 using System.IO;
 using System.Reflection;
 using System.Text;
@@ -16,15 +16,18 @@ namespace INIfier
     /// Used to replace the contents of TextAssets with data from .ini files.
     /// Conversion of https://www.nexusmods.com/site/mods/30
     /// </summary>
-    [SuppressMessage("ReSharper", "UnusedMember.Global")]
-    [BepInPlugin("inifier", "INIfier BepInEx version", "0.1")]
+    [BepInPlugin("inifier", "INIfier BepInEx version", "1.0")]
     public class INIfier : BaseUnityPlugin
     {
+        [DisplayName("Enable replacing TextAssets")]
+        public static ConfigWrapper<bool> ReplacingEnabled { get; private set; }
+        [DisplayName("Enable dumping TextAssets")]
+        public static ConfigWrapper<bool> DumpingEnabled { get; private set; }
+
         private const string ReplacementFileExtension = ".ini";
         private const string DumpFileExtension = ".found";
 
         private static string _assetsPath;
-        private static bool _enabled;
 
         private static List<byte> _originalBytesCode = new List<byte>();
         private static long _originalBytesLocation;
@@ -117,6 +120,9 @@ namespace INIfier
 
         private void Awake()
         {
+            ReplacingEnabled = new ConfigWrapper<bool>("ReplacingEnabled", this, true);
+            DumpingEnabled = new ConfigWrapper<bool>("DumpingEnabled", this, true);
+
             _assetsPath = Path.Combine(Paths.PluginPath, "Assets");
 
             if (!Directory.Exists(_assetsPath))
@@ -133,7 +139,6 @@ namespace INIfier
                 }
             }
 
-            _enabled = true;
             Load();
         }
 
@@ -255,7 +260,7 @@ namespace INIfier
             var replacementFilePath = name + ReplacementFileExtension;
             if (File.Exists(replacementFilePath))
             {
-                if (_enabled)
+                if (ReplacingEnabled.Value)
                 {
                     Logger.Log(LogLevel.Info, "Replacing " + text + " in " + name);
                     try
@@ -277,29 +282,32 @@ namespace INIfier
             }
             else
             {
-                var dumpFilePath = name + DumpFileExtension;
-                if (!File.Exists(dumpFilePath))
+                if (DumpingEnabled.Value)
                 {
-                    Logger.Log(LogLevel.Info, "File " + replacementFilePath + " not found, creating 'found' file");
-                    try
+                    var dumpFilePath = name + DumpFileExtension;
+                    if (!File.Exists(dumpFilePath))
                     {
-                        if (replaceType != ReplaceType.Text)
+                        Logger.Log(LogLevel.Info, "File " + replacementFilePath + " not found, creating 'found' file");
+                        try
                         {
-                            if (replaceType == ReplaceType.Bytes)
-                                File.WriteAllBytes(dumpFilePath, obj as byte[] ?? throw new InvalidOperationException());
+                            if (replaceType != ReplaceType.Text)
+                            {
+                                if (replaceType == ReplaceType.Bytes)
+                                    File.WriteAllBytes(dumpFilePath, obj as byte[] ?? throw new InvalidOperationException());
+                            }
+                            else
+                                File.WriteAllText(dumpFilePath, obj as string, Encoding.UTF8);
                         }
-                        else
-                            File.WriteAllText(dumpFilePath, obj as string, Encoding.UTF8);
+                        catch (Exception e2)
+                        {
+                            Logger.Log(LogLevel.Error, "Error creating file: " + dumpFilePath);
+                            LogException(e2);
+                        }
                     }
-                    catch (Exception e2)
-                    {
-                        Logger.Log(LogLevel.Error, "Error creating file: " + dumpFilePath);
-                        LogException(e2);
-                    }
-                }
 
-                if (File.Exists(replacementFilePath))
-                    obj = DoReplace(asset, replaceType);
+                    if (File.Exists(replacementFilePath))
+                        obj = DoReplace(asset, replaceType);
+                }
             }
             return obj;
         }
